@@ -44,6 +44,19 @@ extension CasePathableMacro: ExtensionMacro {
   }
 }
 
+indirect enum EnumBlock {
+  case caseDecl([EnumCaseElementListSyntax])
+  case ifConfigDecl(IfBlock)
+}
+
+struct IfBlock {
+  struct Clause {
+    let description: String
+    let enumElements: EnumBlock
+  }
+  let clauses: [Clause]
+}
+
 extension CasePathableMacro: MemberMacro {
   public static func expansion<
     Declaration: DeclGroupSyntax, Context: MacroExpansionContext
@@ -69,24 +82,77 @@ extension CasePathableMacro: MemberMacro {
     let rewriter = SelfRewriter(selfEquivalent: enumName)
     let memberBlock = rewriter.rewrite(enumDecl.memberBlock).cast(MemberBlockSyntax.self)
 
-    let enumCaseDecls = memberBlock
+    let enumCaseDecls: [EnumBlock] = memberBlock
       .members
-      .flatMap { $0.decl.as(EnumCaseDeclSyntax.self)?.elements ?? [] }
-
-    var seenCaseNames: Set<String> = []
-    for enumCaseDecl in enumCaseDecls {
-      let name = enumCaseDecl.name.text
-      if seenCaseNames.contains(name) {
-        throw DiagnosticsError(
-          diagnostics: [
-            CasePathableMacroDiagnostic.overloadedCaseName(name).diagnose(
-              at: Syntax(enumCaseDecl.name))
-          ]
-        )
+      .flatMap { element -> [EnumBlock] in
+        if let elements = element.decl.as(EnumCaseDeclSyntax.self)?.elements {
+          return [.caseDecl([elements])]
+        }
+        if let ifConfigDecl = element.decl.as(IfConfigDeclSyntax.self) {
+          let clauses: [IfBlock.Clause] = ifConfigDecl.clauses.compactMap {
+            guard let elements = $0.elements?.as(MemberBlockItemListSyntax.self) else {
+              return nil
+            }
+            let cases = elements.compactMap { $0.decl.as(EnumCaseDeclSyntax.self)?.elements }
+            let description = "\($0.poundKeyword.description)\($0.condition?.description ?? "")"
+            return IfBlock.Clause(description: description, enumElements: .caseDecl(cases))
+          }
+          return [.ifConfigDecl(IfBlock(clauses: clauses))]
+        }
+        return []
       }
-      seenCaseNames.insert(name)
+
+    // TODO: what's this?
+//    var seenCaseNames: Set<String> = []
+//    for enumCaseDecl in enumCaseDecls {
+//      let name = enumCaseDecl.name.text
+//      if seenCaseNames.contains(name) {
+//        throw DiagnosticsError(
+//          diagnostics: [
+//            CasePathableMacroDiagnostic.overloadedCaseName(name).diagnose(
+//              at: Syntax(enumCaseDecl.name))
+//          ]
+//        )
+//      }
+//      seenCaseNames.insert(name)
+//    }
+
+
+    let casePaths: [DeclSyntax] = enumCaseDecls.flatMap {
+      switch $0 {
+      case .caseDecl(let enumCaseDecl):
+        return enumCaseDecl.flatMap { enumCase -> [DeclSyntax] in
+          return Self.enumCaseElementListToDeclSyntax(enumCase, access: access, enumName: enumName)
+        }
+      case .ifConfigDecl(let ifBlock):
+        return ifBlock.clauses.flatMap { clause -> [DeclSyntax] in
+          guard case let .caseDecl(enumCaseDecl) = clause.enumElements else {
+            return []
+          }
+          return [
+          """
+          \(raw: clause.description)
+          """
+          ]
+          + enumCaseDecl.flatMap { enumCase -> [DeclSyntax] in
+            return Self.enumCaseElementListToDeclSyntax(enumCase, access: access, enumName: enumName)
+          }
+        }
+        + ["#endif"]
+      }
     }
 
+    return [
+      """
+      \(access)struct AllCasePaths {
+      \(raw: casePaths.map(\.description).joined(separator: "\n"))
+      }
+      \(access)static var allCasePaths: AllCasePaths { AllCasePaths() }
+      """
+    ]
+  }
+
+  static func enumCaseElementListToDeclSyntax(_ enumCaseDecls: EnumCaseElementListSyntax, access: DeclModifierListSyntax.Element?, enumName: TokenSyntax) -> [DeclSyntax] {
     let casePaths: [DeclSyntax] = enumCaseDecls.map { enumCaseDecl in
       let caseName = enumCaseDecl.name.trimmed
       let associatedValueName = enumCaseDecl.trimmedTypeDescription
@@ -119,15 +185,7 @@ extension CasePathableMacro: MemberMacro {
         }
         """
     }
-
-    return [
-      """
-      \(access)struct AllCasePaths {
-      \(raw: casePaths.map(\.description).joined(separator: "\n"))
-      }
-      \(access)static var allCasePaths: AllCasePaths { AllCasePaths() }
-      """
-    ]
+    return casePaths
   }
 }
 

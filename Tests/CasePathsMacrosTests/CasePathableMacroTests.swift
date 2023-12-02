@@ -19,8 +19,14 @@ final class CasePathableMacroTests: XCTestCase {
       @CasePathable enum Foo {
         case bar
         case baz(Int)
-        case fizz(buzz: String)
-        case fizzier(Int, buzzier: String)
+        #if os(macOS)
+        case autocomplete
+        case secondMissing(String)
+        #elseif os(iOS)
+        case ios
+        #else
+        case elseCase
+        #endif
       }
       """
     } expansion: {
@@ -28,8 +34,14 @@ final class CasePathableMacroTests: XCTestCase {
       enum Foo {
         case bar
         case baz(Int)
-        case fizz(buzz: String)
-        case fizzier(Int, buzzier: String)
+        #if os(macOS)
+        case autocomplete
+        case secondMissing(String)
+        #elseif os(iOS)
+        case ios
+        #else
+        case elseCase
+        #endif
 
         struct AllCasePaths {
           var bar: CasePaths.AnyCasePath<Foo, Void> {
@@ -56,28 +68,63 @@ final class CasePathableMacroTests: XCTestCase {
               }
             )
           }
-          var fizz: CasePaths.AnyCasePath<Foo, String> {
-            CasePaths.AnyCasePath<Foo, String>(
-              embed: Foo.fizz,
+
+            #if os(macOS)
+          var autocomplete: CasePaths.AnyCasePath<Foo, Void> {
+            CasePaths.AnyCasePath<Foo, Void>(
+              embed: {
+                Foo.autocomplete
+              },
               extract: {
-                guard case let .fizz(v0) = $0 else {
+                guard case .autocomplete = $0 else {
+                  return nil
+                }
+                return ()
+              }
+            )
+          }
+          var secondMissing: CasePaths.AnyCasePath<Foo, String> {
+            CasePaths.AnyCasePath<Foo, String>(
+              embed: Foo.secondMissing,
+              extract: {
+                guard case let .secondMissing(v0) = $0 else {
                   return nil
                 }
                 return v0
               }
             )
           }
-          var fizzier: CasePaths.AnyCasePath<Foo, (Int, buzzier: String)> {
-            CasePaths.AnyCasePath<Foo, (Int, buzzier: String)>(
-              embed: Foo.fizzier,
+
+            #elseif os(iOS)
+          var ios: CasePaths.AnyCasePath<Foo, Void> {
+            CasePaths.AnyCasePath<Foo, Void>(
+              embed: {
+                Foo.ios
+              },
               extract: {
-                guard case let .fizzier(v0, v1) = $0 else {
+                guard case .ios = $0 else {
                   return nil
                 }
-                return (v0, v1)
+                return ()
               }
             )
           }
+
+            #else
+          var elseCase: CasePaths.AnyCasePath<Foo, Void> {
+            CasePaths.AnyCasePath<Foo, Void>(
+              embed: {
+                Foo.elseCase
+              },
+              extract: {
+                guard case .elseCase = $0 else {
+                  return nil
+                }
+                return ()
+              }
+            )
+          }
+          #endif
         }
         static var allCasePaths: AllCasePaths { AllCasePaths() }
       }
