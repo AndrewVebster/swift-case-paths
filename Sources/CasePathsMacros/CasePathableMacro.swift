@@ -109,19 +109,14 @@ extension CasePathableMacro: MemberMacro {
         return generateDeclSyntax(from: elements, with: access, enumName: enumName)
       }
       if let ifConfigDecl = $0.decl.as(IfConfigDeclSyntax.self) {
-        return ifConfigDecl.clauses.flatMap { decl -> [DeclSyntax] in
+        let ifClauses = ifConfigDecl.clauses.flatMap { decl -> [DeclSyntax] in
           guard let elements = decl.elements?.as(MemberBlockItemListSyntax.self) else {
             return []
           }
-          let description = "\(decl.poundKeyword.text) \(decl.condition?.description ?? "")"
-          return [
-            """
-            \(raw: description)
-            """
-          ]
-          + generateDeclSyntax(from: elements, with: access, enumName: enumName)
+          let title = "\(decl.poundKeyword.text) \(decl.condition?.description ?? "")"
+          return ["\(raw: title)"] + generateDeclSyntax(from: elements, with: access, enumName: enumName)
         }
-        + ["#endif"]
+        return ifClauses + ["#endif"]
       }
       return []
     }

@@ -419,7 +419,7 @@ final class CasePathableMacroTests: XCTestCase {
         #endif
 
         #if DEBUG
-        #if INTERNAL
+        #if INNER
         case twoLevelsDeep
         case twoLevels(Double)
         #endif
@@ -442,7 +442,7 @@ final class CasePathableMacroTests: XCTestCase {
         #endif
 
         #if DEBUG
-        #if INTERNAL
+        #if INNER
         case twoLevelsDeep
         case twoLevels(Double)
         #endif
@@ -528,7 +528,7 @@ final class CasePathableMacroTests: XCTestCase {
           }
           #endif
           #if DEBUG
-          #if INTERNAL
+          #if INNER
           var twoLevelsDeep: CasePaths.AnyCasePath<Foo, Void> {
             CasePaths.AnyCasePath<Foo, Void>(
               embed: {
