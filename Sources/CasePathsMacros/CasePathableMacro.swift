@@ -44,20 +44,21 @@ extension CasePathableMacro: ExtensionMacro {
   }
 }
 
-indirect enum EnumBlock {
-  case caseDecl([EnumCaseElementListSyntax])
-  case ifConfigDecl(IfBlock)
-}
-
-struct IfBlock {
-  struct Clause {
-    let description: String
-    let enumElements: [EnumBlock]
-  }
-  let clauses: [Clause]
-}
-
 extension CasePathableMacro: MemberMacro {
+  
+  indirect enum Block {
+    case caseDecl([EnumCaseElementListSyntax])
+    case ifConfigDecl(IfBlock)
+  }
+
+  struct IfBlock {
+    struct Clause {
+      let description: String
+      let blocks: [Block]
+    }
+    let clauses: [Clause]
+  }
+
   public static func expansion<
     Declaration: DeclGroupSyntax, Context: MacroExpansionContext
   >(
@@ -82,7 +83,7 @@ extension CasePathableMacro: MemberMacro {
     let rewriter = SelfRewriter(selfEquivalent: enumName)
     let memberBlock = rewriter.rewrite(enumDecl.memberBlock).cast(MemberBlockSyntax.self)
 
-    let enumCaseDecls = parseMemberBlockItem(elements: memberBlock.members)
+    let blocks = parseMemberBlockItem(elements: memberBlock.members)
 
     // TODO: rewrite (but why is it needed?
 //    var seenCaseNames: Set<String> = []
@@ -99,7 +100,7 @@ extension CasePathableMacro: MemberMacro {
 //      seenCaseNames.insert(name)
 //    }
 
-    let casePaths: [DeclSyntax] = blocksToDeclSyntax(enumCaseDecls, access: access, enumName: enumName)
+    let casePaths: [DeclSyntax] = blocksToDeclSyntax(blocks, access: access, enumName: enumName)
 
     return [
       """
@@ -111,33 +112,36 @@ extension CasePathableMacro: MemberMacro {
     ]
   }
 
-  static func parseMemberBlockItem(elements: MemberBlockItemListSyntax) -> [EnumBlock] {
-    elements.flatMap { element -> [EnumBlock] in
-      if let elements = element.decl.as(EnumCaseDeclSyntax.self)?.elements {
-        return [.caseDecl([elements])]
+  static func parseMemberBlockItem(elements: MemberBlockItemListSyntax) -> [Block] {
+    elements.compactMap {
+      if let elements = $0.decl.as(EnumCaseDeclSyntax.self)?.elements {
+        return .caseDecl([elements])
       }
-      if let ifConfigDecl = element.decl.as(IfConfigDeclSyntax.self) {
+      if let ifConfigDecl = $0.decl.as(IfConfigDeclSyntax.self) {
         let clauses: [IfBlock.Clause] = ifConfigDecl.clauses.compactMap {
           guard let elements = $0.elements?.as(MemberBlockItemListSyntax.self) else {
             return nil
           }
-          let cases = parseMemberBlockItem(elements: elements)
-          //let cases = elements.compactMap { $0.decl.as(EnumCaseDeclSyntax.self)?.elements }
           let description = "\($0.poundKeyword.text) \($0.condition?.description ?? "")"
-          return IfBlock.Clause(description: description, enumElements: cases)
+          let blocks = parseMemberBlockItem(elements: elements)
+          return IfBlock.Clause(description: description, blocks: blocks)
         }
-        return [.ifConfigDecl(IfBlock(clauses: clauses))]
+        return .ifConfigDecl(IfBlock(clauses: clauses))
       }
-      return []
+      return nil
     }
   }
 
-  static func blocksToDeclSyntax(_ blocks: [EnumBlock], access: DeclModifierListSyntax.Element?, enumName: TokenSyntax) -> [DeclSyntax] {
+  static func blocksToDeclSyntax(
+    _ blocks: [Block],
+    access: DeclModifierListSyntax.Element?,
+    enumName: TokenSyntax
+  ) -> [DeclSyntax] {
     blocks.flatMap {
       switch $0 {
       case .caseDecl(let enumCaseDecl):
         return enumCaseDecl.flatMap { enumCase -> [DeclSyntax] in
-          return Self.enumCaseElementListToDeclSyntax(enumCase, access: access, enumName: enumName)
+          return enumCaseElementListToDeclSyntax(enumCase, access: access, enumName: enumName)
         }
       case .ifConfigDecl(let ifBlock):
         return ifBlock.clauses.flatMap { clause -> [DeclSyntax] in
@@ -146,21 +150,25 @@ extension CasePathableMacro: MemberMacro {
             \(raw: clause.description)
             """
           ]
-          + Self.blocksToDeclSyntax(clause.enumElements, access: access, enumName: enumName)
+          + blocksToDeclSyntax(clause.blocks, access: access, enumName: enumName)
         }
         + ["#endif"]
       }
     }
   }
 
-  static func enumCaseElementListToDeclSyntax(_ enumCaseDecls: EnumCaseElementListSyntax, access: DeclModifierListSyntax.Element?, enumName: TokenSyntax) -> [DeclSyntax] {
-    let casePaths: [DeclSyntax] = enumCaseDecls.map { enumCaseDecl in
-      let caseName = enumCaseDecl.name.trimmed
-      let associatedValueName = enumCaseDecl.trimmedTypeDescription
-      let hasPayload = enumCaseDecl.parameterClause.map { !$0.parameters.isEmpty } ?? false
+  static func enumCaseElementListToDeclSyntax(
+    _ enumCaseDecls: EnumCaseElementListSyntax,
+    access: DeclModifierListSyntax.Element?,
+    enumName: TokenSyntax
+  ) -> [DeclSyntax] {
+    enumCaseDecls.map {
+      let caseName = $0.name.trimmed
+      let associatedValueName = $0.trimmedTypeDescription
+      let hasPayload = $0.parameterClause.map { !$0.parameters.isEmpty } ?? false
       let bindingNames: String
       let returnName: String
-      if hasPayload, let associatedValue = enumCaseDecl.parameterClause {
+      if hasPayload, let associatedValue = $0.parameterClause {
         let parameterNames = (0..<associatedValue.parameters.count)
           .map { "v\($0)" }
           .joined(separator: ", ")
@@ -173,8 +181,8 @@ extension CasePathableMacro: MemberMacro {
 
       return """
         \(access)var \(caseName): \
-        \(raw: Self.qualifiedCasePathTypeName)<\(enumName), \(raw: associatedValueName)> {
-        \(raw: Self.qualifiedCasePathTypeName)<\(enumName), \(raw: associatedValueName)>(
+        \(raw: qualifiedCasePathTypeName)<\(enumName), \(raw: associatedValueName)> {
+        \(raw: qualifiedCasePathTypeName)<\(enumName), \(raw: associatedValueName)>(
         embed: \(raw: hasPayload ? "\(enumName).\(caseName)" : "{ \(enumName).\(caseName) }"),
         extract: {
         guard case\(raw: hasPayload ? " let" : "").\(caseName)\(raw: bindingNames) = $0 else { \
@@ -186,7 +194,6 @@ extension CasePathableMacro: MemberMacro {
         }
         """
     }
-    return casePaths
   }
 }
 
