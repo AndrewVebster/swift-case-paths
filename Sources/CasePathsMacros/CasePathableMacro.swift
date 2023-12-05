@@ -68,22 +68,26 @@ extension CasePathableMacro: MemberMacro {
 
     let rewriter = SelfRewriter(selfEquivalent: enumName)
     let memberBlock = rewriter.rewrite(enumDecl.memberBlock).cast(MemberBlockSyntax.self)
-    let casePaths = parseMemberBlockItem(elements: memberBlock.members, access: access, enumName: enumName)
 
-    // TODO: rewrite (but why is it needed?
-//    var seenCaseNames: Set<String> = []
-//    for enumCaseDecl in enumCaseDecls {
-//      let name = enumCaseDecl.name.text
-//      if seenCaseNames.contains(name) {
-//        throw DiagnosticsError(
-//          diagnostics: [
-//            CasePathableMacroDiagnostic.overloadedCaseName(name).diagnose(
-//              at: Syntax(enumCaseDecl.name))
-//          ]
-//        )
-//      }
-//      seenCaseNames.insert(name)
-//    }
+    let enumCaseDecls = memberBlock
+          .members
+          .flatMap { $0.decl.as(EnumCaseDeclSyntax.self)?.elements ?? [] }
+
+    var seenCaseNames: Set<String> = []
+    for enumCaseDecl in enumCaseDecls {
+      let name = enumCaseDecl.name.text
+      if seenCaseNames.contains(name) {
+        throw DiagnosticsError(
+          diagnostics: [
+            CasePathableMacroDiagnostic.overloadedCaseName(name).diagnose(
+              at: Syntax(enumCaseDecl.name))
+          ]
+        )
+      }
+      seenCaseNames.insert(name)
+    }
+
+    let casePaths = parseMemberBlockItem(elements: memberBlock.members, access: access, enumName: enumName)
 
     return [
       """

@@ -246,42 +246,6 @@ final class CasePathableMacroTests: XCTestCase {
              ╰─ 🛑 '@CasePathable' cannot be applied to overloaded case name 'bar'
       }
       """
-    } expansion: {
-      """
-      enum Foo {
-        case bar(Int)
-        case bar(int: Int)
-
-        struct AllCasePaths {
-          var bar: CasePaths.AnyCasePath<Foo, Int> {
-            CasePaths.AnyCasePath<Foo, Int>(
-              embed: Foo.bar,
-              extract: {
-                guard case let .bar(v0) = $0 else {
-                  return nil
-                }
-                return v0
-              }
-            )
-          }
-          var bar: CasePaths.AnyCasePath<Foo, Int> {
-            CasePaths.AnyCasePath<Foo, Int>(
-              embed: Foo.bar,
-              extract: {
-                guard case let .bar(v0) = $0 else {
-                  return nil
-                }
-                return v0
-              }
-            )
-          }
-        }
-        static var allCasePaths: AllCasePaths { AllCasePaths() }
-      }
-
-      extension Foo: CasePaths.CasePathable {
-      }
-      """
     }
   }
 
