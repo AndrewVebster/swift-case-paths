@@ -45,20 +45,6 @@ extension CasePathableMacro: ExtensionMacro {
 }
 
 extension CasePathableMacro: MemberMacro {
-  
-  indirect enum Block {
-    case caseDecl([EnumCaseElementListSyntax])
-    case ifConfigDecl(IfBlock)
-  }
-
-  struct IfBlock {
-    struct Clause {
-      let description: String
-      let blocks: [Block]
-    }
-    let clauses: [Clause]
-  }
-
   public static func expansion<
     Declaration: DeclGroupSyntax, Context: MacroExpansionContext
   >(
@@ -82,8 +68,7 @@ extension CasePathableMacro: MemberMacro {
 
     let rewriter = SelfRewriter(selfEquivalent: enumName)
     let memberBlock = rewriter.rewrite(enumDecl.memberBlock).cast(MemberBlockSyntax.self)
-
-    let blocks = parseMemberBlockItem(elements: memberBlock.members)
+    let casePaths = parseMemberBlockItem(elements: memberBlock.members, access: access, enumName: enumName)
 
     // TODO: rewrite (but why is it needed?
 //    var seenCaseNames: Set<String> = []
@@ -100,8 +85,6 @@ extension CasePathableMacro: MemberMacro {
 //      seenCaseNames.insert(name)
 //    }
 
-    let casePaths: [DeclSyntax] = blocksToDeclSyntax(blocks, access: access, enumName: enumName)
-
     return [
       """
       \(access)struct AllCasePaths {
@@ -112,48 +95,31 @@ extension CasePathableMacro: MemberMacro {
     ]
   }
 
-  static func parseMemberBlockItem(elements: MemberBlockItemListSyntax) -> [Block] {
-    elements.compactMap {
-      if let elements = $0.decl.as(EnumCaseDeclSyntax.self)?.elements {
-        return .caseDecl([elements])
-      }
-      if let ifConfigDecl = $0.decl.as(IfConfigDeclSyntax.self) {
-        let clauses: [IfBlock.Clause] = ifConfigDecl.clauses.compactMap {
-          guard let elements = $0.elements?.as(MemberBlockItemListSyntax.self) else {
-            return nil
-          }
-          let description = "\($0.poundKeyword.text) \($0.condition?.description ?? "")"
-          let blocks = parseMemberBlockItem(elements: elements)
-          return IfBlock.Clause(description: description, blocks: blocks)
-        }
-        return .ifConfigDecl(IfBlock(clauses: clauses))
-      }
-      return nil
-    }
-  }
-
-  static func blocksToDeclSyntax(
-    _ blocks: [Block],
+  static func parseMemberBlockItem(
+    elements: MemberBlockItemListSyntax,
     access: DeclModifierListSyntax.Element?,
     enumName: TokenSyntax
   ) -> [DeclSyntax] {
-    blocks.flatMap {
-      switch $0 {
-      case .caseDecl(let enumCaseDecl):
-        return enumCaseDecl.flatMap { enumCase -> [DeclSyntax] in
-          return enumCaseElementListToDeclSyntax(enumCase, access: access, enumName: enumName)
-        }
-      case .ifConfigDecl(let ifBlock):
-        return ifBlock.clauses.flatMap { clause -> [DeclSyntax] in
+    elements.flatMap {
+      if let elements = $0.decl.as(EnumCaseDeclSyntax.self)?.elements {
+          return enumCaseElementListToDeclSyntax(elements, access: access, enumName: enumName)
+      }
+      if let ifConfigDecl = $0.decl.as(IfConfigDeclSyntax.self) {
+        return ifConfigDecl.clauses.flatMap { decl -> [DeclSyntax] in
+          guard let elements = decl.elements?.as(MemberBlockItemListSyntax.self) else {
+            return []
+          }
+          let description = "\(decl.poundKeyword.text) \(decl.condition?.description ?? "")"
           return [
             """
-            \(raw: clause.description)
+            \(raw: description)
             """
           ]
-          + blocksToDeclSyntax(clause.blocks, access: access, enumName: enumName)
+          + parseMemberBlockItem(elements: elements, access: access, enumName: enumName)
         }
         + ["#endif"]
       }
+      return []
     }
   }
 

@@ -439,7 +439,7 @@ final class CasePathableMacroTests: XCTestCase {
   }
 
   func testConditionalCompilation() {
-    assertMacro(record: true) {
+    assertMacro {
       """
       @CasePathable enum Foo {
         case bar
