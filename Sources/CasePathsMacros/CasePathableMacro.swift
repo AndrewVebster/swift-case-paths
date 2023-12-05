@@ -70,8 +70,8 @@ extension CasePathableMacro: MemberMacro {
     let memberBlock = rewriter.rewrite(enumDecl.memberBlock).cast(MemberBlockSyntax.self)
 
     let enumCaseDecls = memberBlock
-          .members
-          .flatMap { $0.decl.as(EnumCaseDeclSyntax.self)?.elements ?? [] }
+      .members
+      .flatMap { $0.decl.as(EnumCaseDeclSyntax.self)?.elements ?? [] }
 
     var seenCaseNames: Set<String> = []
     for enumCaseDecl in enumCaseDecls {
@@ -87,7 +87,7 @@ extension CasePathableMacro: MemberMacro {
       seenCaseNames.insert(name)
     }
 
-    let casePaths = parseMemberBlockItem(elements: memberBlock.members, access: access, enumName: enumName)
+    let casePaths = generateDeclSyntax(from: memberBlock.members, with: access, enumName: enumName)
 
     return [
       """
@@ -99,14 +99,14 @@ extension CasePathableMacro: MemberMacro {
     ]
   }
 
-  static func parseMemberBlockItem(
-    elements: MemberBlockItemListSyntax,
-    access: DeclModifierListSyntax.Element?,
+  static func generateDeclSyntax(
+    from elements: MemberBlockItemListSyntax,
+    with access: DeclModifierListSyntax.Element?,
     enumName: TokenSyntax
   ) -> [DeclSyntax] {
     elements.flatMap {
       if let elements = $0.decl.as(EnumCaseDeclSyntax.self)?.elements {
-          return enumCaseElementListToDeclSyntax(elements, access: access, enumName: enumName)
+        return generateDeclSyntax(from: elements, with: access, enumName: enumName)
       }
       if let ifConfigDecl = $0.decl.as(IfConfigDeclSyntax.self) {
         return ifConfigDecl.clauses.flatMap { decl -> [DeclSyntax] in
@@ -119,7 +119,7 @@ extension CasePathableMacro: MemberMacro {
             \(raw: description)
             """
           ]
-          + parseMemberBlockItem(elements: elements, access: access, enumName: enumName)
+          + generateDeclSyntax(from: elements, with: access, enumName: enumName)
         }
         + ["#endif"]
       }
@@ -127,9 +127,9 @@ extension CasePathableMacro: MemberMacro {
     }
   }
 
-  static func enumCaseElementListToDeclSyntax(
-    _ enumCaseDecls: EnumCaseElementListSyntax,
-    access: DeclModifierListSyntax.Element?,
+  static func generateDeclSyntax(
+    from enumCaseDecls: EnumCaseElementListSyntax,
+    with access: DeclModifierListSyntax.Element?,
     enumName: TokenSyntax
   ) -> [DeclSyntax] {
     enumCaseDecls.map {
