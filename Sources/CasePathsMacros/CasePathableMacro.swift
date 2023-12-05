@@ -52,7 +52,7 @@ indirect enum EnumBlock {
 struct IfBlock {
   struct Clause {
     let description: String
-    let enumElements: EnumBlock
+    let enumElements: [EnumBlock]
   }
   let clauses: [Clause]
 }
@@ -82,27 +82,9 @@ extension CasePathableMacro: MemberMacro {
     let rewriter = SelfRewriter(selfEquivalent: enumName)
     let memberBlock = rewriter.rewrite(enumDecl.memberBlock).cast(MemberBlockSyntax.self)
 
-    let enumCaseDecls: [EnumBlock] = memberBlock
-      .members
-      .flatMap { element -> [EnumBlock] in
-        if let elements = element.decl.as(EnumCaseDeclSyntax.self)?.elements {
-          return [.caseDecl([elements])]
-        }
-        if let ifConfigDecl = element.decl.as(IfConfigDeclSyntax.self) {
-          let clauses: [IfBlock.Clause] = ifConfigDecl.clauses.compactMap {
-            guard let elements = $0.elements?.as(MemberBlockItemListSyntax.self) else {
-              return nil
-            }
-            let cases = elements.compactMap { $0.decl.as(EnumCaseDeclSyntax.self)?.elements }
-            let description = "\($0.poundKeyword.description)\($0.condition?.description ?? "")"
-            return IfBlock.Clause(description: description, enumElements: .caseDecl(cases))
-          }
-          return [.ifConfigDecl(IfBlock(clauses: clauses))]
-        }
-        return []
-      }
+    let enumCaseDecls = parseMemberBlockItem(elements: memberBlock.members)
 
-    // TODO: what's this?
+    // TODO: rewrite (but why is it needed?
 //    var seenCaseNames: Set<String> = []
 //    for enumCaseDecl in enumCaseDecls {
 //      let name = enumCaseDecl.name.text
@@ -117,30 +99,7 @@ extension CasePathableMacro: MemberMacro {
 //      seenCaseNames.insert(name)
 //    }
 
-
-    let casePaths: [DeclSyntax] = enumCaseDecls.flatMap {
-      switch $0 {
-      case .caseDecl(let enumCaseDecl):
-        return enumCaseDecl.flatMap { enumCase -> [DeclSyntax] in
-          return Self.enumCaseElementListToDeclSyntax(enumCase, access: access, enumName: enumName)
-        }
-      case .ifConfigDecl(let ifBlock):
-        return ifBlock.clauses.flatMap { clause -> [DeclSyntax] in
-          guard case let .caseDecl(enumCaseDecl) = clause.enumElements else {
-            return []
-          }
-          return [
-          """
-          \(raw: clause.description)
-          """
-          ]
-          + enumCaseDecl.flatMap { enumCase -> [DeclSyntax] in
-            return Self.enumCaseElementListToDeclSyntax(enumCase, access: access, enumName: enumName)
-          }
-        }
-        + ["#endif"]
-      }
-    }
+    let casePaths: [DeclSyntax] = blocksToDeclSyntax(enumCaseDecls, access: access, enumName: enumName)
 
     return [
       """
@@ -150,6 +109,48 @@ extension CasePathableMacro: MemberMacro {
       \(access)static var allCasePaths: AllCasePaths { AllCasePaths() }
       """
     ]
+  }
+
+  static func parseMemberBlockItem(elements: MemberBlockItemListSyntax) -> [EnumBlock] {
+    elements.flatMap { element -> [EnumBlock] in
+      if let elements = element.decl.as(EnumCaseDeclSyntax.self)?.elements {
+        return [.caseDecl([elements])]
+      }
+      if let ifConfigDecl = element.decl.as(IfConfigDeclSyntax.self) {
+        let clauses: [IfBlock.Clause] = ifConfigDecl.clauses.compactMap {
+          guard let elements = $0.elements?.as(MemberBlockItemListSyntax.self) else {
+            return nil
+          }
+          let cases = parseMemberBlockItem(elements: elements)
+          //let cases = elements.compactMap { $0.decl.as(EnumCaseDeclSyntax.self)?.elements }
+          let description = "\($0.poundKeyword.text) \($0.condition?.description ?? "")"
+          return IfBlock.Clause(description: description, enumElements: cases)
+        }
+        return [.ifConfigDecl(IfBlock(clauses: clauses))]
+      }
+      return []
+    }
+  }
+
+  static func blocksToDeclSyntax(_ blocks: [EnumBlock], access: DeclModifierListSyntax.Element?, enumName: TokenSyntax) -> [DeclSyntax] {
+    blocks.flatMap {
+      switch $0 {
+      case .caseDecl(let enumCaseDecl):
+        return enumCaseDecl.flatMap { enumCase -> [DeclSyntax] in
+          return Self.enumCaseElementListToDeclSyntax(enumCase, access: access, enumName: enumName)
+        }
+      case .ifConfigDecl(let ifBlock):
+        return ifBlock.clauses.flatMap { clause -> [DeclSyntax] in
+          return [
+            """
+            \(raw: clause.description)
+            """
+          ]
+          + Self.blocksToDeclSyntax(clause.enumElements, access: access, enumName: enumName)
+        }
+        + ["#endif"]
+      }
+    }
   }
 
   static func enumCaseElementListToDeclSyntax(_ enumCaseDecls: EnumCaseElementListSyntax, access: DeclModifierListSyntax.Element?, enumName: TokenSyntax) -> [DeclSyntax] {

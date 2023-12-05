@@ -246,6 +246,42 @@ final class CasePathableMacroTests: XCTestCase {
              ╰─ 🛑 '@CasePathable' cannot be applied to overloaded case name 'bar'
       }
       """
+    } expansion: {
+      """
+      enum Foo {
+        case bar(Int)
+        case bar(int: Int)
+
+        struct AllCasePaths {
+          var bar: CasePaths.AnyCasePath<Foo, Int> {
+            CasePaths.AnyCasePath<Foo, Int>(
+              embed: Foo.bar,
+              extract: {
+                guard case let .bar(v0) = $0 else {
+                  return nil
+                }
+                return v0
+              }
+            )
+          }
+          var bar: CasePaths.AnyCasePath<Foo, Int> {
+            CasePaths.AnyCasePath<Foo, Int>(
+              embed: Foo.bar,
+              extract: {
+                guard case let .bar(v0) = $0 else {
+                  return nil
+                }
+                return v0
+              }
+            )
+          }
+        }
+        static var allCasePaths: AllCasePaths { AllCasePaths() }
+      }
+
+      extension Foo: CasePaths.CasePathable {
+      }
+      """
     }
   }
 
@@ -421,6 +457,7 @@ final class CasePathableMacroTests: XCTestCase {
         #if DEBUG
         #if INTERNAL
         case twoLevelsDeep
+        case twoLevels(Double)
         #endif
         #endif
       }
@@ -443,6 +480,7 @@ final class CasePathableMacroTests: XCTestCase {
         #if DEBUG
         #if INTERNAL
         case twoLevelsDeep
+        case twoLevels(Double)
         #endif
         #endif
 
@@ -460,9 +498,7 @@ final class CasePathableMacroTests: XCTestCase {
               }
             )
           }
-
-
-            #if os(macOS)
+          #if os(macOS)
           var macCase: CasePaths.AnyCasePath<Foo, Void> {
             CasePaths.AnyCasePath<Foo, Void>(
               embed: {
@@ -487,8 +523,7 @@ final class CasePathableMacroTests: XCTestCase {
               }
             )
           }
-
-            #elseif os(iOS)
+          #elseif os(iOS)
           var iosCase: CasePaths.AnyCasePath<Foo, Void> {
             CasePaths.AnyCasePath<Foo, Void>(
               embed: {
@@ -502,8 +537,7 @@ final class CasePathableMacroTests: XCTestCase {
               }
             )
           }
-
-            #else
+          #else
           var elseCase: CasePaths.AnyCasePath<Foo, String> {
             CasePaths.AnyCasePath<Foo, String>(
               embed: Foo.elseCase,
@@ -529,9 +563,33 @@ final class CasePathableMacroTests: XCTestCase {
             )
           }
           #endif
-
-
-            #if DEBUG
+          #if DEBUG
+          #if INTERNAL
+          var twoLevelsDeep: CasePaths.AnyCasePath<Foo, Void> {
+            CasePaths.AnyCasePath<Foo, Void>(
+              embed: {
+                Foo.twoLevelsDeep
+              },
+              extract: {
+                guard case .twoLevelsDeep = $0 else {
+                  return nil
+                }
+                return ()
+              }
+            )
+          }
+          var twoLevels: CasePaths.AnyCasePath<Foo, Double> {
+            CasePaths.AnyCasePath<Foo, Double>(
+              embed: Foo.twoLevels,
+              extract: {
+                guard case let .twoLevels(v0) = $0 else {
+                  return nil
+                }
+                return v0
+              }
+            )
+          }
+          #endif
           #endif
         }
         static var allCasePaths: AllCasePaths { AllCasePaths() }
